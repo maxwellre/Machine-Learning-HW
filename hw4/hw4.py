@@ -55,20 +55,24 @@ class DecisionStumps:
     def __init__(self, weight):
         self.d = None
         self.slct_dimen = None
-        self.boundLineMin = None
-        self.boundLineMax = None
+        self.data_min = None
+        self.data_max = None
         self.fit_err = None
         self.decision_bound = None
         self.pred_sign = None
         self.weight = weight
 
-    def fit(self, data_in, labels, scan_num = 100):
+    def fit(self, data_in, labels, used_bound_ind, scan_num):
         [dataLen, self.d] = np.shape(data_in)
         fit_err = np.empty((self.d,scan_num))
-        fit_err_ori = np.empty((self.d, scan_num))
+
         self.data_min = np.zeros(self.d)
         self.data_max = np.ones(self.d)
+
         pred_sign_flip = np.zeros((self.d,scan_num),dtype=bool)
+        err_origin = np.empty((self.d,scan_num))
+        err_flip = np.empty((self.d, scan_num))
+
         for i in range(self.d):
             self.data_min[i] = np.min(data_in[:,i])
             self.data_max[i] = np.max(data_in[:,i])
@@ -79,17 +83,19 @@ class DecisionStumps:
                 pred_label[data_in[:,i] > decision_bound] = 1
 
                 err_ind = (pred_label != labels)
-                err_origin = np.sum(self.weight[err_ind])
-                err_flip = np.sum(self.weight[np.logical_not(err_ind)])
+                err_origin[i, j] = np.sum(self.weight[err_ind])
+                err_flip[i, j] = np.sum(self.weight[np.logical_not(err_ind)])
 
-                if (err_origin > err_flip):
+                if (err_origin[i, j] > err_flip[i, j]):
                     pred_sign_flip[i, j] = True
-                    err_ind = np.logical_not(err_ind)
-                    fit_err[i, j] = err_flip
+                    fit_err[i, j] = err_flip[i, j]
                 else:
-                    fit_err[i, j] = err_origin
+                    fit_err[i, j] = err_origin[i, j]
 
+        fit_err[used_bound_ind] = 1
         optimal_ind = np.unravel_index(fit_err.argmin(), fit_err.shape)
+        used_bound_ind[optimal_ind] = True
+
         self.pred_sign_flip = pred_sign_flip[optimal_ind]
         self.slct_dimen = optimal_ind[0]
         self.decision_bound = self.data_min[self.slct_dimen] + optimal_ind[1] * step_size
@@ -98,15 +104,17 @@ class DecisionStumps:
         # class1_pred_ind = np.logical_xor((data_in[:, self.slct_dimen] > self.decision_bound), self.pred_sign_flip)
         # pred_label[class1_pred_ind] = 1
         # fit_err_ind = np.not_equal(pred_label, labels)
-
+        #
         # print("Err rate = {:.1f}%", 100*np.sum(fit_err_ind) / dataLen)
+        # print("Sign flipped = ",self.pred_sign_flip)
+        #
         # plt.figure()
         # disp2DResult(xTrain, np.column_stack((1 - tTrain, tTrain)).astype(bool), 0)
         # self.plotBound()
         # plt.plot(data_in[fit_err_ind, 0], data_in[fit_err_ind, 1], 'k.', markersize=2)
         # plt.show()
 
-        pass
+        return used_bound_ind
 
     def predict(self,data_in):
         [dataLen, d] = np.shape(data_in)
@@ -128,72 +136,52 @@ class DecisionStumps:
         else:
             raise Exception('Can display 2D boundary only!')
 
-    # def fastfit(self, data_in, labels):
-    #     [dataLen, self.d] = np.shape(data_in)
-    #     class0_ind = (labels==0)
-    #     class1_ind = (labels==1)
-    #     class0_mean = (self.weight[class0_ind]).dot(data_in[class0_ind,:])
-    #     class1_mean = (self.weight[class1_ind]).dot(data_in[class1_ind,:])
-    #     class0_var = (self.weight[class0_ind]).dot(np.square(data_in[class0_ind,:]-class0_mean))
-    #     class1_var = (self.weight[class1_ind]).dot(np.square(data_in[class1_ind,:]-class1_mean))
-    #     var_sum = class0_var + class1_var
-    #     pred_sign_flip = (class1_mean < class0_mean)
-    #     decision_bound = np.divide(np.multiply(class0_var, class1_mean), var_sum) + \
-    #                      np.divide(np.multiply(class1_var, class0_mean), var_sum)
-    #     pred_label = np.zeros((dataLen,self.d))
-    #     class1_pred_ind = np.logical_xor((data_in > decision_bound),pred_sign_flip)
-    #     pred_label[class1_pred_ind] = 1
-    #
-    #     fit_err_ind = np.not_equal(pred_label.T,labels)
-    #     fit_err = np.sum(fit_err_ind,axis=1)/dataLen
-    #     self.slct_dimen= np.argmin(fit_err)
-    #     fit_err_ind = fit_err_ind[self.slct_dimen, :]
-    #     if (self.d == 2):
-    #         self.data_min = np.min(data_in,axis=0)
-    #         self.data_max = np.max(data_in,axis=0)
-    #     self.fit_err = fit_err[self.slct_dimen]
-    #     self.decision_bound = decision_bound[self.slct_dimen]
-    #     self.pred_sign_flip = pred_sign_flip[self.slct_dimen]
-    #     return fit_err_ind
-
 # Implementation of my Adaboost
 class Adaboost:
-    def __init__(self, M = 500, weight = None):
+    def __init__(self, M = 400, weight = None):
         self.M = M
         self.weight = weight
         self.clfs = []
         self.errs = np.ones(self.M)
         self.alphas = np.ones(self.M)
 
-    def fit(self, data_in, labels, dispBound = False):
+    def fit(self, data_in, labels, dispBound = False, scan_num = 200):
         [dataLen, self.d] = np.shape(data_in)
         if (self.weight is None):
             self.weight = np.ones(dataLen) / dataLen
 
+            used_bound_ind = np.zeros((self.d,scan_num),dtype=bool)
         for i in range(self.M):
             clf = DecisionStumps(self.weight)
-            clf.fit(data_in, labels)
-            pred_label = clf.predict(data_in)
-            fit_err_ind = np.not_equal(pred_label,labels)
+            used_bound_ind = clf.fit(data_in, labels, used_bound_ind, scan_num)
 
             # fit_err_ind = clf.fastfit(data_in, labels)
 
-            if dispBound:
-                # plt.plot(data_in[fit_err_ind, 0], data_in[fit_err_ind, 1], 'k.', markersize=3)
-                clf.plotBound()
+            pred_label = clf.predict(data_in)
+            fit_err_ind = np.not_equal(pred_label,labels)
+
+            # if dispBound:
+            #     clf.plotBound()
 
             # plt.show()
 
             self.errs[i] = np.sum(self.weight[fit_err_ind])/np.sum(self.weight)
 
-            self.alphas[i] = np.log((1-self.errs[i])/self.errs[i])
+            self.alphas[i] = np.log((1-self.errs[i])/(self.errs[i] + 1e-16))
 
-            temp = np.ones(dataLen)
-            temp[fit_err_ind] = -1
+            # temp = np.ones(dataLen)
+            # temp[fit_err_ind] = -1
+            # self.weight *= np.exp(self.alphas[i] * temp)
 
-            self.weight = np.multiply(self.weight, np.exp(self.alphas[i]*temp))
+            self.weight *= np.exp(self.alphas[i]*fit_err_ind)
+
+            self.weight = self.weight / np.sum(self.weight)
 
             self.clfs.append(clf)
+
+        print("Fit errs = ",self.errs)
+        print("Fit alphas = ", self.alphas)
+        print("Final used_bound_ind = ",used_bound_ind)
 
     def predict(self, data_in):
         dataLen = data_in.shape[0]
@@ -205,8 +193,6 @@ class Adaboost:
             pred_all += ( curr_pred * self.alphas[i] )
         pred_label[pred_all > 0] = 1
         return pred_label
-
-
 
 #-----------------------------------------------------------------------------------------------------------------------
 # Generating data
@@ -255,6 +241,8 @@ trainLen = xTrain.shape[0]
 randInd = np.random.permutation(trainLen)
 xTrain = xTrain[randInd,:]
 tTrain = tTrain[randInd]
+# xTrain = xTrain[randInd[:20],:]
+# tTrain = tTrain[randInd[:20]]
 
 xMin = min(np.min(xTrain[:,0]),np.min(xTest[:,0]))
 xMax = max(np.max(xTrain[:,0]),np.max(xTest[:,0]))
@@ -306,11 +294,51 @@ disp2DResult(xTrain, np.column_stack((1 - tTrain, tTrain)).astype(bool),0)
 clf = Adaboost(200)
 clf.fit(xTrain, tTrain, dispBound=True)
 tPred = clf.predict(xTrain)
-print("Train classification error = {:.1f}%".format(100*np.sum(tPred != tTrain)/tTest.shape[0]))
-tPred = clf.predict(xTest)
-print("Final classification error = {:.1f}%".format(100*np.sum(tPred != tTest)/tTest.shape[0]))
+print("Train classification error = {:.1f}%".format(100*np.sum(tPred != tTrain)/tTrain.shape[0]))
+# tPred = clf.predict(xTest)
+# print("Final classification error = {:.1f}%".format(100*np.sum(tPred != tTest)/tTest.shape[0]))
+
+xRange = np.arange(xMin,xMax,0.05)
+yRange = np.arange(yMin,yMax,0.05)
+xGrid, yGrid = np.meshgrid(xRange, yRange, sparse=False, indexing='xy')
+xGrid = np.reshape(xGrid, (xGrid.size,1))
+yGrid = np.reshape(yGrid, (yGrid.size,1))
+deciBoundX = np.column_stack((xGrid,yGrid))
+classPr = clf.predict(deciBoundX)
+plt.scatter(deciBoundX[(classPr == 1),0],deciBoundX[(classPr == 1),1],s=0.01,c='g',label='Class 1 Boundary')
+(plt.gca()).legend(loc='upper left',bbox_to_anchor=(0.25, -0.15))
 
 plt.show()
 
 #-----------------------------------------------------------------------------------------------------------------------
 print('End')
+
+#-----------------------------------------------------------------------------------------------------------------------
+# def fastfit(self, data_in, labels):
+#     [dataLen, self.d] = np.shape(data_in)
+#     class0_ind = (labels==0)
+#     class1_ind = (labels==1)
+#     class0_mean = (self.weight[class0_ind]).dot(data_in[class0_ind,:])
+#     class1_mean = (self.weight[class1_ind]).dot(data_in[class1_ind,:])
+#     class0_var = (self.weight[class0_ind]).dot(np.square(data_in[class0_ind,:]-class0_mean))
+#     class1_var = (self.weight[class1_ind]).dot(np.square(data_in[class1_ind,:]-class1_mean))
+#     var_sum = class0_var + class1_var
+#     pred_sign_flip = (class1_mean < class0_mean)
+#     decision_bound = np.divide(np.multiply(class0_var, class1_mean), var_sum) + \
+#                      np.divide(np.multiply(class1_var, class0_mean), var_sum)
+#     pred_label = np.zeros((dataLen,self.d))
+#     class1_pred_ind = np.logical_xor((data_in > decision_bound),pred_sign_flip)
+#     pred_label[class1_pred_ind] = 1
+#
+#     fit_err_ind = np.not_equal(pred_label.T,labels)
+#     fit_err = np.sum(fit_err_ind,axis=1)/dataLen
+#
+#     self.slct_dimen= np.argmin(fit_err)
+#     fit_err_ind = fit_err_ind[self.slct_dimen, :]
+#     if (self.d == 2):
+#         self.data_min = np.min(data_in,axis=0)
+#         self.data_max = np.max(data_in,axis=0)
+#     self.fit_err = fit_err[self.slct_dimen]
+#     self.decision_bound = decision_bound[self.slct_dimen]
+#     self.pred_sign_flip = pred_sign_flip[self.slct_dimen]
+#     return fit_err_ind
