@@ -51,61 +51,162 @@ def disp2DResult(data_in, one_hot, disp_now=1, label_ext = ''):
 #-----------------------------------------------------------------------------------------------------------------------
 # Class
 # Implementation of my decision stumps classifier
-class DecisionDump:
+class DecisionStumps:
     def __init__(self, weight):
-        self.d = -1
+        self.d = None
+        self.slct_dimen = None
+        self.boundLineMin = None
+        self.boundLineMax = None
+        self.fit_err = None
+        self.decision_bound = None
+        self.pred_sign = None
         self.weight = weight
 
-    def fit(self, data_in, labels):
+    def fit(self, data_in, labels, scan_num = 100):
         [dataLen, self.d] = np.shape(data_in)
-        class0_ind = (labels==0)
-        class1_ind = (labels==1)
-        class0_mean = self.weight[class0_ind].dot(data_in[class0_ind,:])
-        class1_mean = self.weight[class1_ind].dot(data_in[class1_ind,:])
-        class0_var = self.weight[class0_ind].dot(np.square(data_in[class0_ind,:]-class0_mean))
-        class1_var = self.weight[class1_ind].dot(np.square(data_in[class1_ind,:]-class1_mean))
-        var_sum = class0_var + class1_var
-        decision_bound = np.divide(np.multiply(class0_var,class1_mean),var_sum) + \
-                          np.divide(np.multiply(class1_var,class0_mean),var_sum)
-        pred_sign = (class1_mean > class0_mean)
-        pred_label = np.zeros((dataLen,self.d))
-        class1_pred_ind = np.logical_and((data_in > decision_bound),pred_sign)
-        pred_label[class1_pred_ind] = 1
+        fit_err = np.empty((self.d,scan_num))
+        fit_err_ori = np.empty((self.d, scan_num))
+        self.data_min = np.zeros(self.d)
+        self.data_max = np.ones(self.d)
+        pred_sign_flip = np.zeros((self.d,scan_num),dtype=bool)
+        for i in range(self.d):
+            self.data_min[i] = np.min(data_in[:,i])
+            self.data_max[i] = np.max(data_in[:,i])
+            step_size = (self.data_max[i]-self.data_min[i])/scan_num
+            for j in range(scan_num):
+                decision_bound = self.data_min[i] + j*step_size
+                pred_label = np.zeros(dataLen)
+                pred_label[data_in[:,i] > decision_bound] = 1
 
-        fit_err_ind = np.not_equal(pred_label.T,labels)
-        fit_err = np.sum(fit_err_ind,axis=1)/dataLen
-        self.slct_dimen= np.argmin(fit_err)
-        if (self.d == 2):
-            self.boundLineMin = np.min(data_in[:, 1-self.slct_dimen])
-            self.boundLineMax = np.max(data_in[:, 1-self.slct_dimen])
-        self.fit_err_ind = fit_err_ind[self.slct_dimen,:]
-        self.fit_err = fit_err[self.slct_dimen]
-        self.decision_bound = decision_bound[self.slct_dimen]
-        self.pred_sign = pred_sign[self.slct_dimen]
-        return self.fit_err_ind
+                err_ind = (pred_label != labels)
+                err_origin = np.sum(self.weight[err_ind])
+                err_flip = np.sum(self.weight[np.logical_not(err_ind)])
+
+                if (err_origin > err_flip):
+                    pred_sign_flip[i, j] = True
+                    err_ind = np.logical_not(err_ind)
+                    fit_err[i, j] = err_flip
+                else:
+                    fit_err[i, j] = err_origin
+
+        optimal_ind = np.unravel_index(fit_err.argmin(), fit_err.shape)
+        self.pred_sign_flip = pred_sign_flip[optimal_ind]
+        self.slct_dimen = optimal_ind[0]
+        self.decision_bound = self.data_min[self.slct_dimen] + optimal_ind[1] * step_size
+
+        # pred_label = np.zeros(dataLen)
+        # class1_pred_ind = np.logical_xor((data_in[:, self.slct_dimen] > self.decision_bound), self.pred_sign_flip)
+        # pred_label[class1_pred_ind] = 1
+        # fit_err_ind = np.not_equal(pred_label, labels)
+
+        # print("Err rate = {:.1f}%", 100*np.sum(fit_err_ind) / dataLen)
+        # plt.figure()
+        # disp2DResult(xTrain, np.column_stack((1 - tTrain, tTrain)).astype(bool), 0)
+        # self.plotBound()
+        # plt.plot(data_in[fit_err_ind, 0], data_in[fit_err_ind, 1], 'k.', markersize=2)
+        # plt.show()
+
+        pass
 
     def predict(self,data_in):
         [dataLen, d] = np.shape(data_in)
         if (self.d != d):
             raise Exception('Dimension mismatch!')
-        pred_label = np.zeros((dataLen, d))
-        class1_pred_ind = np.logical_and((data_in[:,self.slct_dimen] > self.decision_bound), self.pred_sign)
+        pred_label = np.zeros(dataLen)
+        class1_pred_ind = np.logical_xor((data_in[:,self.slct_dimen] > self.decision_bound), self.pred_sign_flip)
         pred_label[class1_pred_ind] = 1
         return pred_label
 
     def plotBound(self):
         if (self.d == 2):
             if (self.slct_dimen == 1):
-                plt.plot([self.boundLineMin, self.boundLineMax], [self.decision_bound, self.decision_bound],'k',
+                plt.plot([self.data_min[0], self.data_max[0]], [self.decision_bound, self.decision_bound],'k',
                          linewidth=1)
             elif (self.slct_dimen == 0):
-                plt.plot([self.decision_bound, self.decision_bound], [self.boundLineMin, self.boundLineMax],'k',
+                plt.plot([self.decision_bound, self.decision_bound], [self.data_min[1], self.data_max[1]],'k',
                          linewidth=1)
+        else:
+            raise Exception('Can display 2D boundary only!')
+
+    # def fastfit(self, data_in, labels):
+    #     [dataLen, self.d] = np.shape(data_in)
+    #     class0_ind = (labels==0)
+    #     class1_ind = (labels==1)
+    #     class0_mean = (self.weight[class0_ind]).dot(data_in[class0_ind,:])
+    #     class1_mean = (self.weight[class1_ind]).dot(data_in[class1_ind,:])
+    #     class0_var = (self.weight[class0_ind]).dot(np.square(data_in[class0_ind,:]-class0_mean))
+    #     class1_var = (self.weight[class1_ind]).dot(np.square(data_in[class1_ind,:]-class1_mean))
+    #     var_sum = class0_var + class1_var
+    #     pred_sign_flip = (class1_mean < class0_mean)
+    #     decision_bound = np.divide(np.multiply(class0_var, class1_mean), var_sum) + \
+    #                      np.divide(np.multiply(class1_var, class0_mean), var_sum)
+    #     pred_label = np.zeros((dataLen,self.d))
+    #     class1_pred_ind = np.logical_xor((data_in > decision_bound),pred_sign_flip)
+    #     pred_label[class1_pred_ind] = 1
+    #
+    #     fit_err_ind = np.not_equal(pred_label.T,labels)
+    #     fit_err = np.sum(fit_err_ind,axis=1)/dataLen
+    #     self.slct_dimen= np.argmin(fit_err)
+    #     fit_err_ind = fit_err_ind[self.slct_dimen, :]
+    #     if (self.d == 2):
+    #         self.data_min = np.min(data_in,axis=0)
+    #         self.data_max = np.max(data_in,axis=0)
+    #     self.fit_err = fit_err[self.slct_dimen]
+    #     self.decision_bound = decision_bound[self.slct_dimen]
+    #     self.pred_sign_flip = pred_sign_flip[self.slct_dimen]
+    #     return fit_err_ind
 
 # Implementation of my Adaboost
 class Adaboost:
-    def __init__(self):
-        pass
+    def __init__(self, M = 500, weight = None):
+        self.M = M
+        self.weight = weight
+        self.clfs = []
+        self.errs = np.ones(self.M)
+        self.alphas = np.ones(self.M)
+
+    def fit(self, data_in, labels, dispBound = False):
+        [dataLen, self.d] = np.shape(data_in)
+        if (self.weight is None):
+            self.weight = np.ones(dataLen) / dataLen
+
+        for i in range(self.M):
+            clf = DecisionStumps(self.weight)
+            clf.fit(data_in, labels)
+            pred_label = clf.predict(data_in)
+            fit_err_ind = np.not_equal(pred_label,labels)
+
+            # fit_err_ind = clf.fastfit(data_in, labels)
+
+            if dispBound:
+                # plt.plot(data_in[fit_err_ind, 0], data_in[fit_err_ind, 1], 'k.', markersize=3)
+                clf.plotBound()
+
+            # plt.show()
+
+            self.errs[i] = np.sum(self.weight[fit_err_ind])/np.sum(self.weight)
+
+            self.alphas[i] = np.log((1-self.errs[i])/self.errs[i])
+
+            temp = np.ones(dataLen)
+            temp[fit_err_ind] = -1
+
+            self.weight = np.multiply(self.weight, np.exp(self.alphas[i]*temp))
+
+            self.clfs.append(clf)
+
+    def predict(self, data_in):
+        dataLen = data_in.shape[0]
+        pred_label = np.zeros(dataLen)
+        pred_all = np.zeros(dataLen)
+        for i in range(self.M):
+            curr_pred = self.clfs[i].predict(data_in)
+            curr_pred[curr_pred == 0] = -1
+            pred_all += ( curr_pred * self.alphas[i] )
+        pred_label[pred_all > 0] = 1
+        return pred_label
+
+
 
 #-----------------------------------------------------------------------------------------------------------------------
 # Generating data
@@ -122,13 +223,13 @@ x0, C0 = gaussianFromEigen(m0, lamb0, U0, data_num)
 # Class 1
 thetaA = -3*(np.pi)/4
 pi_A = 1/3
-mA = np.array([-2,1])
+mA = np.array([-2,1])*2
 lambA = [2,1/4]
 UA = np.mat([[np.cos(thetaA), np.sin(thetaA)],[-np.sin(thetaA), np.cos(thetaA)]]).T
 
 thetaB = (np.pi)/4
 pi_B = 2/3
-mB = np.array([3,2])
+mB = np.array([3,2])*2
 lambB = [3,1]
 UB = np.mat([[np.cos(thetaB), np.sin(thetaB)],[-np.sin(thetaB), np.cos(thetaB)]]).T
 
@@ -200,39 +301,16 @@ yMax = max(np.max(xTrain[:,1]),np.max(xTest[:,1]))
 # plt.show()
 
 #-----------------------------------------------------------------------------------------------------------------------
-# 2)
-weight = np.ones(trainLen)/trainLen
-clf = DecisionDump(weight)
-fit_err_ind = clf.fit(xTrain,tTrain)
-plt.scatter(xTrain[fit_err_ind,0],xTrain[fit_err_ind,1],s=20,c='k')
-clf.plotBound()
+# 2) Adaboost with decision stumps as weak learners
 disp2DResult(xTrain, np.column_stack((1 - tTrain, tTrain)).astype(bool),0)
+clf = Adaboost(200)
+clf.fit(xTrain, tTrain, dispBound=True)
+tPred = clf.predict(xTrain)
+print("Train classification error = {:.1f}%".format(100*np.sum(tPred != tTrain)/tTest.shape[0]))
+tPred = clf.predict(xTest)
+print("Final classification error = {:.1f}%".format(100*np.sum(tPred != tTest)/tTest.shape[0]))
+
 plt.show()
 
-# [dataLen, d] = np.shape(xTrain)
-# weight = np.ones(dataLen)/dataLen
-# class0_ind = (tTrain==0)
-# class1_ind = (tTrain==1)
-# class0_mean = weight[class0_ind].dot(xTrain[class0_ind,:])
-# class1_mean = weight[class1_ind].dot(xTrain[class1_ind,:])
-# class0_var = weight[class0_ind].dot(np.square(xTrain[class0_ind,:]-class0_mean))
-# class1_var = weight[class1_ind].dot(np.square(xTrain[class1_ind,:]-class1_mean))
-# var_sum = class0_var + class1_var
-# decision_bound = np.divide(np.multiply(class0_var,class1_mean),var_sum) + \
-#                   np.divide(np.multiply(class1_var,class0_mean),var_sum)
-# class_sign = (class1_mean > class0_mean)
-# class1_pred = np.zeros((dataLen,d))
-# class1_pred_ind = np.logical_and((xTrain > decision_bound),class_sign)
-# class1_pred[class1_pred_ind] = 1;
-#
-# pred_err_ind = np.not_equal(class1_pred.T,tTrain)
-# pred_err = np.sum(pred_err_ind,axis=1)/dataLen
-# slct_bound_ind = np.argmin(pred_err)
-# pred_err_ind = pred_err_ind[slct_bound_ind,:]
-#
-# plt.scatter(xTrain[pred_err_ind,0],xTrain[pred_err_ind,1],s=20,c='k')
-# disp2DResult(xTrain, np.column_stack((1 - tTrain, tTrain)).astype(bool),0)
-# plt.plot([xMin,xMax],[decision_bound[slct_bound_ind],decision_bound[slct_bound_ind]],'k',linewidth=1)
-# plt.show()
 #-----------------------------------------------------------------------------------------------------------------------
 print('End')
