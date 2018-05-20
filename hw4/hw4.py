@@ -99,21 +99,6 @@ class DecisionStumps:
         self.pred_sign_flip = pred_sign_flip[optimal_ind]
         self.slct_dimen = optimal_ind[0]
         self.decision_bound = self.data_min[self.slct_dimen] + optimal_ind[1] * step_size
-
-        # pred_label = np.zeros(dataLen)
-        # class1_pred_ind = np.logical_xor((data_in[:, self.slct_dimen] > self.decision_bound), self.pred_sign_flip)
-        # pred_label[class1_pred_ind] = 1
-        # fit_err_ind = np.not_equal(pred_label, labels)
-        #
-        # print("Err rate = {:.1f}%", 100*np.sum(fit_err_ind) / dataLen)
-        # print("Sign flipped = ",self.pred_sign_flip)
-        #
-        # plt.figure()
-        # disp2DResult(xTrain, np.column_stack((1 - tTrain, tTrain)).astype(bool), 0)
-        # self.plotBound()
-        # plt.plot(data_in[fit_err_ind, 0], data_in[fit_err_ind, 1], 'k.', markersize=2)
-        # plt.show()
-
         return used_bound_ind
 
     def predict(self,data_in):
@@ -138,50 +123,53 @@ class DecisionStumps:
 
 # Implementation of my Adaboost
 class Adaboost:
-    def __init__(self, M = 400, weight = None):
+    def __init__(self, M = 400, weight = None, scan_num = 200):
         self.M = M
         self.weight = weight
         self.clfs = []
         self.errs = np.ones(self.M)
         self.alphas = np.ones(self.M)
+        self.scan_num = scan_num
 
-    def fit(self, data_in, labels, dispBound = False, scan_num = 200):
+    def fit(self, data_in, labels, dispBound = False):
         [dataLen, self.d] = np.shape(data_in)
         if (self.weight is None):
             self.weight = np.ones(dataLen) / dataLen
 
-            used_bound_ind = np.zeros((self.d,scan_num),dtype=bool)
+            used_bound_ind = np.zeros((self.d,self.scan_num),dtype=bool)
         for i in range(self.M):
             clf = DecisionStumps(self.weight)
-            used_bound_ind = clf.fit(data_in, labels, used_bound_ind, scan_num)
-
-            # fit_err_ind = clf.fastfit(data_in, labels)
+            used_bound_ind = clf.fit(data_in, labels, used_bound_ind, self.scan_num)
 
             pred_label = clf.predict(data_in)
             fit_err_ind = np.not_equal(pred_label,labels)
 
-            # if dispBound:
-            #     clf.plotBound()
-
-            # plt.show()
+            if dispBound:
+                clf.plotBound()
 
             self.errs[i] = np.sum(self.weight[fit_err_ind])/np.sum(self.weight)
 
             self.alphas[i] = np.log((1-self.errs[i])/(self.errs[i] + 1e-16))
 
-            # temp = np.ones(dataLen)
-            # temp[fit_err_ind] = -1
-            # self.weight *= np.exp(self.alphas[i] * temp)
+            temp = np.ones(dataLen)
+            temp[fit_err_ind] = -1
+            self.weight *= np.exp(-self.alphas[i] * temp)
 
-            self.weight *= np.exp(self.alphas[i]*fit_err_ind)
+            # self.weight *= np.exp(self.alphas[i]*fit_err_ind)
 
             self.weight = self.weight / np.sum(self.weight)
 
             self.clfs.append(clf)
 
-        print("Fit errs = ",self.errs)
-        print("Fit alphas = ", self.alphas)
-        print("Final used_bound_ind = ",used_bound_ind)
+            if (np.sum(used_bound_ind == False) == 0):
+                print("All boundaries have been used, increase scan number")
+                self.M = i+1
+                break
+
+        # For debugging
+        # print("Fit errs = ",self.errs)
+        # print("Fit alphas = ", self.alphas)
+        # print("Final used_bound_ind = ",used_bound_ind)
 
     def predict(self, data_in):
         dataLen = data_in.shape[0]
@@ -241,8 +229,6 @@ trainLen = xTrain.shape[0]
 randInd = np.random.permutation(trainLen)
 xTrain = xTrain[randInd,:]
 tTrain = tTrain[randInd]
-# xTrain = xTrain[randInd[:20],:]
-# tTrain = tTrain[randInd[:20]]
 
 xMin = min(np.min(xTrain[:,0]),np.min(xTest[:,0]))
 xMax = max(np.max(xTrain[:,0]),np.max(xTest[:,0]))
@@ -290,13 +276,30 @@ yMax = max(np.max(xTrain[:,1]),np.max(xTest[:,1]))
 
 #-----------------------------------------------------------------------------------------------------------------------
 # 2) Adaboost with decision stumps as weak learners
+plt.figure()
+plt.get_current_fig_manager().window.wm_geometry("1400x760+20+20")
 disp2DResult(xTrain, np.column_stack((1 - tTrain, tTrain)).astype(bool),0)
-clf = Adaboost(200)
+clf = Adaboost(5)
 clf.fit(xTrain, tTrain, dispBound=True)
+xRange = np.arange(xMin,xMax,0.05)
+yRange = np.arange(yMin,yMax,0.05)
+xGrid, yGrid = np.meshgrid(xRange, yRange, sparse=False, indexing='xy')
+xGrid = np.reshape(xGrid, (xGrid.size,1))
+yGrid = np.reshape(yGrid, (yGrid.size,1))
+deciBoundX = np.column_stack((xGrid,yGrid))
+classPr = clf.predict(deciBoundX)
+plt.scatter(deciBoundX[(classPr == 1),0],deciBoundX[(classPr == 1),1],s=0.01,c='g',label='Class 1 Boundary')
+(plt.gca()).legend(loc='upper left',bbox_to_anchor=(0.25, -0.15))
+
+plt.figure()
+plt.get_current_fig_manager().window.wm_geometry("1400x760+20+20")
+disp2DResult(xTrain, np.column_stack((1 - tTrain, tTrain)).astype(bool),0)
+clf = Adaboost(400, scan_num=170)
+clf.fit(xTrain, tTrain, dispBound=False)
 tPred = clf.predict(xTrain)
 print("Train classification error = {:.1f}%".format(100*np.sum(tPred != tTrain)/tTrain.shape[0]))
-# tPred = clf.predict(xTest)
-# print("Final classification error = {:.1f}%".format(100*np.sum(tPred != tTest)/tTest.shape[0]))
+tPred = clf.predict(xTest)
+print("Final classification error = {:.1f}%".format(100*np.sum(tPred != tTest)/tTest.shape[0]))
 
 xRange = np.arange(xMin,xMax,0.05)
 yRange = np.arange(yMin,yMax,0.05)
@@ -310,8 +313,7 @@ plt.scatter(deciBoundX[(classPr == 1),0],deciBoundX[(classPr == 1),1],s=0.01,c='
 
 plt.show()
 
-#-----------------------------------------------------------------------------------------------------------------------
-print('End')
+
 
 #-----------------------------------------------------------------------------------------------------------------------
 # def fastfit(self, data_in, labels):
@@ -342,3 +344,17 @@ print('End')
 #     self.decision_bound = decision_bound[self.slct_dimen]
 #     self.pred_sign_flip = pred_sign_flip[self.slct_dimen]
 #     return fit_err_ind
+
+# pred_label = np.zeros(dataLen)
+# class1_pred_ind = np.logical_xor((data_in[:, self.slct_dimen] > self.decision_bound), self.pred_sign_flip)
+# pred_label[class1_pred_ind] = 1
+# fit_err_ind = np.not_equal(pred_label, labels)
+#
+# print("Err rate = {:.1f}%", 100*np.sum(fit_err_ind) / dataLen)
+# print("Sign flipped = ",self.pred_sign_flip)
+#
+# plt.figure()
+# disp2DResult(xTrain, np.column_stack((1 - tTrain, tTrain)).astype(bool), 0)
+# self.plotBound()
+# plt.plot(data_in[fit_err_ind, 0], data_in[fit_err_ind, 1], 'k.', markersize=2)
+# plt.show()
