@@ -236,43 +236,43 @@ yMin = min(np.min(xTrain[:,1]),np.min(xTest[:,1]))
 yMax = max(np.max(xTrain[:,1]),np.max(xTest[:,1]))
 #-----------------------------------------------------------------------------------------------------------------------
 # 1) SVM-SMO
-# l = [0.1, 2.0, 10.0] # kernel radius
-# plt.figure()
-# plt.get_current_fig_manager().window.wm_geometry("1400x760+20+20")
-# for i in range(3):
-#     gamma = 0.5/(l[i]**2)
-#     clf = SVC(kernel='rbf', gamma=gamma)
-#     clf.fit(xTrain, tTrain)
-#     support_vect = clf.support_vectors_
-#     vect_num = clf.n_support_
-#     support_vect_ratio = 0.5*sum(vect_num)/train_num
-#
-#     tPred = clf.predict(xTest)
-#     evalBCResult(tPred, tTest)
-#
-#     # Visualize data and classification error (and decision boundary)
-#     plt.subplot2grid((1, 3), (0, i), rowspan=1, colspan=1)
-#
-#     plt.scatter(support_vect[:,0],support_vect[:,1],c='k',s=20,label="Support Vectors",facecolors=None)
-#
-#     disp2DResult(xTrain, np.column_stack((1 - tTrain, tTrain)).astype(bool),0,label_ext='Train')
-#     disp2DResult(xTest, np.column_stack((1 - tTest, tTest)).astype(bool),0,label_ext='Test')
-#
-    # xRange = np.arange(xMin,xMax,0.05)
-    # yRange = np.arange(yMin,yMax,0.05)
-#     xGrid, yGrid = np.meshgrid(xRange, yRange, sparse=False, indexing='xy')
-#     xGrid = np.reshape(xGrid, (xGrid.size,1))
-#     yGrid = np.reshape(yGrid, (yGrid.size,1))
-#     deciBoundX = np.column_stack((xGrid,yGrid))
-#     classPr = clf.predict(deciBoundX)
-#     plt.scatter(deciBoundX[(classPr == 1),0],deciBoundX[(classPr == 1),1],s=0.01,c='g',label='Class 1 Boundary')
-#     if (i ==1):
-#         (plt.gca()).legend(loc='upper left',bbox_to_anchor=(0.25, -0.15))
-#     plt.title("l={0:.1f}, fraction of support vectors = {1:.1f}%" \
-#      .format(l[i],100*support_vect_ratio),fontsize=12)
-#
-# plt.subplots_adjust(left=0.05, right=0.98, top=0.9, bottom=0.1)
-# plt.show()
+l = [0.1, 2.0, 10.0] # kernel radius
+plt.figure()
+plt.get_current_fig_manager().window.wm_geometry("1400x760+20+20")
+for i in range(3):
+    gamma = 0.5/(l[i]**2)
+    clf = SVC(kernel='rbf', gamma=gamma)
+    clf.fit(xTrain, tTrain)
+    support_vect = clf.support_vectors_
+    vect_num = clf.n_support_
+    support_vect_ratio = 0.5*sum(vect_num)/train_num
+
+    tPred = clf.predict(xTest)
+    evalBCResult(tPred, tTest)
+
+    # Visualize data and classification error (and decision boundary)
+    plt.subplot2grid((1, 3), (0, i), rowspan=1, colspan=1)
+
+    plt.scatter(support_vect[:,0],support_vect[:,1],c='k',s=20,label="Support Vectors",facecolors=None)
+
+    disp2DResult(xTrain, np.column_stack((1 - tTrain, tTrain)).astype(bool),0,label_ext='Train')
+    disp2DResult(xTest, np.column_stack((1 - tTest, tTest)).astype(bool),0,label_ext='Test')
+
+    xRange = np.arange(xMin,xMax,0.05)
+    yRange = np.arange(yMin,yMax,0.05)
+    xGrid, yGrid = np.meshgrid(xRange, yRange, sparse=False, indexing='xy')
+    xGrid = np.reshape(xGrid, (xGrid.size,1))
+    yGrid = np.reshape(yGrid, (yGrid.size,1))
+    deciBoundX = np.column_stack((xGrid,yGrid))
+    classPr = clf.predict(deciBoundX)
+    plt.scatter(deciBoundX[(classPr == 1),0],deciBoundX[(classPr == 1),1],s=0.01,c='g',label='Class 1 Boundary')
+    if (i ==1):
+        (plt.gca()).legend(loc='upper left',bbox_to_anchor=(0.25, -0.15))
+    plt.title("l={0:.1f}, fraction of support vectors = {1:.1f}%" \
+     .format(l[i],100*support_vect_ratio),fontsize=12)
+
+plt.subplots_adjust(left=0.05, right=0.98, top=0.9, bottom=0.1)
+plt.show()
 
 #-----------------------------------------------------------------------------------------------------------------------
 # 2) Adaboost with decision stumps as weak learners
@@ -297,9 +297,13 @@ disp2DResult(xTrain, np.column_stack((1 - tTrain, tTrain)).astype(bool),0)
 clf = Adaboost(400, scan_num=170)
 clf.fit(xTrain, tTrain, dispBound=False)
 tPred = clf.predict(xTrain)
-print("Train classification error = {:.1f}%".format(100*np.sum(tPred != tTrain)/tTrain.shape[0]))
+print("Training classification error = {:.1f}%".format(100*np.sum(tPred != tTrain)/tTrain.shape[0]))
 tPred = clf.predict(xTest)
-print("Final classification error = {:.1f}%".format(100*np.sum(tPred != tTest)/tTest.shape[0]))
+print("Test classification error = {:.1f}%".format(100*np.sum(tPred != tTest)/tTest.shape[0]))
+print("Test error of Class 0 = {:.1f}%".format(100*np.sum(tPred[tTest==0] != tTest[tTest==0])/
+                                               tTest[tTest==0].shape[0]))
+print("Test error of Class 1 = {:.1f}%".format(100*np.sum(tPred[tTest==1] != tTest[tTest==1])/
+                                               tTest[tTest==1].shape[0]))
 
 xRange = np.arange(xMin,xMax,0.05)
 yRange = np.arange(yMin,yMax,0.05)
@@ -312,49 +316,3 @@ plt.scatter(deciBoundX[(classPr == 1),0],deciBoundX[(classPr == 1),1],s=0.01,c='
 (plt.gca()).legend(loc='upper left',bbox_to_anchor=(0.25, -0.15))
 
 plt.show()
-
-
-
-#-----------------------------------------------------------------------------------------------------------------------
-# def fastfit(self, data_in, labels):
-#     [dataLen, self.d] = np.shape(data_in)
-#     class0_ind = (labels==0)
-#     class1_ind = (labels==1)
-#     class0_mean = (self.weight[class0_ind]).dot(data_in[class0_ind,:])
-#     class1_mean = (self.weight[class1_ind]).dot(data_in[class1_ind,:])
-#     class0_var = (self.weight[class0_ind]).dot(np.square(data_in[class0_ind,:]-class0_mean))
-#     class1_var = (self.weight[class1_ind]).dot(np.square(data_in[class1_ind,:]-class1_mean))
-#     var_sum = class0_var + class1_var
-#     pred_sign_flip = (class1_mean < class0_mean)
-#     decision_bound = np.divide(np.multiply(class0_var, class1_mean), var_sum) + \
-#                      np.divide(np.multiply(class1_var, class0_mean), var_sum)
-#     pred_label = np.zeros((dataLen,self.d))
-#     class1_pred_ind = np.logical_xor((data_in > decision_bound),pred_sign_flip)
-#     pred_label[class1_pred_ind] = 1
-#
-#     fit_err_ind = np.not_equal(pred_label.T,labels)
-#     fit_err = np.sum(fit_err_ind,axis=1)/dataLen
-#
-#     self.slct_dimen= np.argmin(fit_err)
-#     fit_err_ind = fit_err_ind[self.slct_dimen, :]
-#     if (self.d == 2):
-#         self.data_min = np.min(data_in,axis=0)
-#         self.data_max = np.max(data_in,axis=0)
-#     self.fit_err = fit_err[self.slct_dimen]
-#     self.decision_bound = decision_bound[self.slct_dimen]
-#     self.pred_sign_flip = pred_sign_flip[self.slct_dimen]
-#     return fit_err_ind
-
-# pred_label = np.zeros(dataLen)
-# class1_pred_ind = np.logical_xor((data_in[:, self.slct_dimen] > self.decision_bound), self.pred_sign_flip)
-# pred_label[class1_pred_ind] = 1
-# fit_err_ind = np.not_equal(pred_label, labels)
-#
-# print("Err rate = {:.1f}%", 100*np.sum(fit_err_ind) / dataLen)
-# print("Sign flipped = ",self.pred_sign_flip)
-#
-# plt.figure()
-# disp2DResult(xTrain, np.column_stack((1 - tTrain, tTrain)).astype(bool), 0)
-# self.plotBound()
-# plt.plot(data_in[fit_err_ind, 0], data_in[fit_err_ind, 1], 'k.', markersize=2)
-# plt.show()
