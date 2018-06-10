@@ -12,6 +12,7 @@ from matplotlib.patches import Ellipse
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
+from sklearn.linear_model import Lasso
 
 #-----------------------------------------------------------------------------------------------------------------------
 # Configurations
@@ -78,58 +79,10 @@ def disp2DResult(data_in, one_hot, disp_now=1):
     if disp_now:
         plt.show()
 
-#-----------------------------------------------------------------------------------------------------------------------
-# # Class
-# # Implementation of my K-means algorithm:
-# class KMeans:
-#     def __init__(self, n_clusters, n_init=1, n_iter=100):
-#         self.clust_num = n_clusters
-#         self.n_init = n_init
-#         self.n_iter = n_iter
-#
-#     def assignment_step(self, curr_center):
-#         MSE = np.empty((self.data_len, self.clust_num))
-#         for j in range(self.clust_num):
-#             MSE[:, j] = nla.norm(self.data_in - curr_center[j, :], axis=1)
-#         assign_label = np.argmin(MSE, axis=1)
-#         return assign_label,MSE
-#
-#     def update_step(self, assign_label):
-#         curr_center = np.empty((self.clust_num,self.data_dimen))
-#         for j in range(self.clust_num):
-#             curr_center[j,:] = np.mean(self.data_in[assign_label == j,:], axis=0)
-#         return curr_center
-#
-#     def fit(self, data_in):
-#         self.data_in = data_in
-#         self.data_len = data_in.shape[0]
-#         self.data_dimen = data_in.shape[1]
-#
-#         data_min = np.min(data_in, axis=0)
-#         data_max = np.max(data_in, axis=0)
-#
-#         all_center = []
-#         all_label = []
-#         all_MSE = np.empty((self.n_init))
-#         for i in range(self.n_init):
-#             invalid_init = 1
-#             while(invalid_init):
-#                 curr_center = np.random.uniform(data_min,data_max,size=(self.clust_num,self.data_dimen))
-#                 assign_label, _ = self.assignment_step(curr_center)
-#                 label_num = len(np.unique(assign_label))
-#                 if (label_num == self.clust_num):
-#                     invalid_init = 0
-#
-#             for k in range(self.n_iter):
-#                 curr_center = self.update_step(assign_label)
-#                 assign_label,MSE = self.assignment_step(curr_center)
-#             all_center.append(curr_center)
-#             all_label.append(assign_label)
-#             all_MSE[i] = np.sum(MSE)
-#         slct_init_ind = np.argmin(all_MSE)
-#         self.cluster_centers_ = all_center[slct_init_ind]
-#         self.labels_ = all_label[slct_init_ind]
-#         return self
+# Normalized mean square error (MSE)
+def MSE(y, recon):
+    return (nla.norm(y - recon)/nla.norm(y))**2
+
 #-----------------------------------------------------------------------------------------------------------------------
 # Generate seven "quasi-orthogonal" random vectors in d dimensions
 d = 30 # increased dimension
@@ -178,12 +131,6 @@ Comp_mean[0,:] = vect_pool[0,:]
 Comp_mean[1,:] = 2*vect_pool[3,:]
 Comp_mean[2,:] = (2**0.5)*vect_pool[5,:]
 
-# # (Var(X) = E[X^2] - E[X]^2 => Var(X1+X2) = Var(X1) + Var(X2) if X1 and X2 are independent)
-# Comp_var = np.zeros((3,d))
-# Comp_var[0,:] = np.square(vect_pool[1,:]) + np.square(vect_pool[2,:]) + (sigma**2)*np.ones(d)
-# Comp_var[1,:] = 2*np.square(vect_pool[4,:]) + np.square(vect_pool[5,:]) + (sigma**2)*np.ones(d)
-# Comp_var[2,:] = np.square(vect_pool[0,:]+vect_pool[1,:]) + 0.5*np.square(vect_pool[4,:]) + (sigma**2)*np.ones(d)
-
 mixGaussInd = np.random.choice(3,data_num)
 ind0 = (mixGaussInd==0)
 ind1 = (mixGaussInd==1)
@@ -192,13 +139,14 @@ x0Len = np.sum(ind0)
 x1Len = np.sum(ind1)
 x2Len = np.sum(ind2)
 prob_z = np.array([x0Len, x1Len, x2Len]).reshape((3,1))/data_num # P(z)
-print("Ratio of gaussian mixture components (30D) = {:d}:{:d}:{:d}".format(x0Len,x1Len,x2Len))
+print("Ratio of gaussian mixture components = {:d}:{:d}:{:d}".format(x0Len,x1Len,x2Len))
 print("P(z[0]=1) = {:.3f}, P(z[1]=1) = {:.3f}, P(z[2]=1) = {:.3f}".format(prob_z[0,0],prob_z[1,0],prob_z[2,0]))
 x = np.concatenate((Comp1[ind0,:], Comp2[ind1,:], Comp3[ind2,:]),axis=0)
 temp = np.concatenate((np.zeros(x0Len),np.ones(x1Len),2*np.ones(x2Len)))
 z = np.column_stack((temp==0,temp==1,temp==2)) # One-hot encoding (.astype(int))
 
 #-----------------------------------------------------------------------------------------------------------------------
+# Part I
 # 1a) SVD
 # u, s, vh = nla.svd(x)
 # plt.figure()
@@ -208,9 +156,6 @@ z = np.column_stack((temp==0,temp==1,temp==2)) # One-hot encoding (.astype(int))
 #-----------------------------------------------------------------------------------------------------------------------
 # 1b) PCA
 # domin_num = 6
-#
-# # projected = np.matmul(x,vh[:6,:].T)
-# # mean_proj = np.matmul(Comp_mean,vh[:6,:].T)
 #
 # scaler = StandardScaler()
 # scaler.fit(x)
@@ -225,6 +170,7 @@ z = np.column_stack((temp==0,temp==1,temp==2)) # One-hot encoding (.astype(int))
 #     print("Projections of the component mean:\n",mean_proj)
 #
 # plt.figure()
+# plt.get_current_fig_manager().window.wm_geometry("1400x760+20+20")
 # plt.subplot(1,2,1)
 # disp2DResult(x_scaled[:,:2], z, disp_now=0)
 # plt.plot(mean_scaled[:, 0], mean_scaled[:, 1], 'm^')
@@ -240,7 +186,6 @@ z = np.column_stack((temp==0,temp==1,temp==2)) # One-hot encoding (.astype(int))
 # gs.update(wspace=0.05, hspace=0.3)
 # for k in range(2,6):
 #     print("k = ",k)
-#     # kmean_h = KMeans(n_clusters=k, n_init=10).fit(x_proj)
 #     kmean_h = KMeans(n_clusters=k, init='random', n_init=10, random_state=0).fit(x_projected)
 #     clust_center.append(kmean_h.cluster_centers_)
 #
@@ -255,6 +200,8 @@ z = np.column_stack((temp==0,temp==1,temp==2)) # One-hot encoding (.astype(int))
 #     plt.plot(clust_center[k - 2][:, 0], clust_center[k - 2][:, 1], 'kx')
 #     plt.plot(mean_proj[:, 0], mean_proj[:, 1], 'm^')
 #
+#-----------------------------------------------------------------------------------------------------------------------
+# 2) How the cluster centers found by K-means relate to the d0-dimensional projections of the vectors
 # for i in range(4):
 #     clust_vect_corr = (mean_proj/nla.norm(mean_proj,axis=1).reshape((mean_proj.shape[0],1))) \
 #         .dot((clust_center[i]/nla.norm(clust_center[i],axis=1).reshape((clust_center[i].shape[0],1))).T)
@@ -262,6 +209,93 @@ z = np.column_stack((temp==0,temp==1,temp==2)) # One-hot encoding (.astype(int))
 #         print("k={:2d}: Correlation between cluster mean and data model mean:\n".format(i+2),clust_vect_corr)
 
 #-----------------------------------------------------------------------------------------------------------------------
+# Part II
+# 3) Generate a m-by-d matrix Phi
+m = 4 # Projection dimension
+P0 = 1/2 # P(u[i] = +1)
+P1 = 1/2 # P(u[i] = -1)
+
+m_factor = 1/np.sqrt(m)
+Phi = np.random.choice([1,-1], size=[m,d], p=[P0, P1])
+#-----------------------------------------------------------------------------------------------------------------------
+# 3a) Compressive projection:
+y =  m_factor * np.matmul(Phi,x.T) # Size of y: [m,data_num]
+
+# 3b) Basis
+B = vect_pool
+
+#-----------------------------------------------------------------------------------------------------------------------
+# 4) Sparse reconstruction of the data
+PhiB = m_factor * np.matmul(Phi,B.T)
+clf = Lasso(alpha = 1.0)
+clf.fit(PhiB,y)
+a_hat = clf.coef_
+with printoptions(precision=1, suppress=True):
+    print(a_hat)
+
+recon = np.matmul(PhiB,a_hat.T)
+Lasso_loss = MSE(y, recon)
+# with printoptions(precision=1, suppress=True):
+#     print("y = \n",y, "\ny Reconstruction = \n",recon)
+print("Lasso reconstruction normalized MSE = {:.2f}".format(Lasso_loss))
+#-----------------------------------------------------------------------------------------------------------------------
+# 5) normalized MSE versus averaged over all the data.
+# draw_num = 10
+# lamb = np.arange(51,dtype='float')/50.0
+# lamb_num = len(lamb)
+# norm_MSE = np.empty((draw_num,lamb_num))
+# MSE_Comp1 = np.empty((draw_num,lamb_num))
+# MSE_Comp2 = np.empty((draw_num,lamb_num))
+# MSE_Comp3 = np.empty((draw_num,lamb_num))
+# for i in range(draw_num):
+#     Z1 = np.random.normal(0, 1, data_num)
+#     Z2 = np.random.normal(0, 1, data_num)
+#     N = np.random.normal(0, sigma, size=[data_num,d])
+#     Comp1 = vect_pool[0,:] + np.outer(Z1,vect_pool[1,:]) + np.outer(Z2,vect_pool[2,:]) + N
+#     Comp2 = 2*vect_pool[3,:] + (2**0.5)*np.outer(Z1,vect_pool[4,:]) + np.outer(Z2,vect_pool[5,:]) + N
+#     Comp3 = (2**0.5)*vect_pool[5,:] + np.outer(Z1,(vect_pool[0,:]+vect_pool[1,:])) + \
+#             0.5*(2**0.5)*np.outer(Z2,vect_pool[4,:]) + N
+#     mixGaussInd = np.random.choice(3,data_num)
+#     ind0 = (mixGaussInd==0)
+#     ind1 = (mixGaussInd==1)
+#     ind2 = (mixGaussInd==2)
+#     x0Len = np.sum(ind0)
+#     x1Len = np.sum(ind1)
+#     x2Len = np.sum(ind2)
+#     prob_z = np.array([x0Len, x1Len, x2Len]).reshape((3,1))/data_num # P(z)
+#     print("Draw {:d}\nRatio of gaussian mixture components = {:d}:{:d}:{:d}".format(i,x0Len,x1Len,x2Len))
+#     print("P(z[0]=1) = {:.3f}, P(z[1]=1) = {:.3f}, P(z[2]=1) = {:.3f}".format(prob_z[0,0],prob_z[1,0],prob_z[2,0]))
+#     x = np.concatenate((Comp1[ind0,:], Comp2[ind1,:], Comp3[ind2,:]),axis=0)
+#
+#     y = m_factor * np.matmul(Phi, x.T)
+#
+#     for j in range(lamb_num):
+#         clf = Lasso(alpha=lamb[j])
+#         clf.fit(PhiB, y)
+#         a_hat = clf.coef_
+#         recon = np.matmul(PhiB, a_hat.T)
+#         norm_MSE[i, j] = MSE(y, recon)
+#         MSE_Comp1[i, j] = MSE(y[:,ind0], recon[:,ind0])
+#         MSE_Comp2[i, j] = MSE(y[:, ind1], recon[:, ind1])
+#         MSE_Comp3[i, j] = MSE(y[:, ind2], recon[:, ind2])
+#
+# plt.figure()
+# plt.get_current_fig_manager().window.wm_geometry("1400x660+20+20")
+# plt.subplot(1,2,1)
+# plt.plot(lamb,np.mean(norm_MSE,axis=0))
+# plt.xlabel("Lambda")
+# plt.ylabel("Avg. Normalized MSE")
+# plt.subplot(1,2,2)
+# plt.plot(lamb,np.mean(MSE_Comp1,axis=0),label="Component {:2d}".format(1))
+# plt.plot(lamb,np.mean(MSE_Comp2,axis=0),label="Component {:2d}".format(2))
+# plt.plot(lamb,np.mean(MSE_Comp3,axis=0),label="Component {:2d}".format(3))
+# plt_ax = plt.gca()
+# plt_ax.legend(loc='upper left')
+# plt.xlabel("Lambda")
+# plt.ylabel("Avg. Normalized MSE")
+
+#-----------------------------------------------------------------------------------------------------------------------
+# 6) 
 
 #-----------------------------------------------------------------------------------------------------------------------
 plt.show()
