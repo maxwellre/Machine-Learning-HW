@@ -153,6 +153,7 @@ plt.get_current_fig_manager().window.wm_geometry("1400x760+20+20")
 plt.plot(range(1,d+1),s)
 plt.xlabel("Singular value index")
 plt.ylabel("Singular values")
+
 #-----------------------------------------------------------------------------------------------------------------------
 # 1b) PCA
 domin_num = 6
@@ -231,8 +232,9 @@ PhiB = m_factor * np.matmul(Phi,B.T)
 clf = Lasso(alpha = 1.0)
 clf.fit(PhiB,y)
 a_hat = clf.coef_
+s_hat = np.matmul(a_hat,B)
 with printoptions(precision=1, suppress=True):
-    print(a_hat)
+    print("a_hat = \n",a_hat,"\ns_hat = \n",s_hat)
 
 recon = np.matmul(PhiB,a_hat.T)
 Lasso_loss = MSE(y, recon)
@@ -252,10 +254,10 @@ for i in range(draw_num):
     Z1 = np.random.normal(0, 1, data_num)
     Z2 = np.random.normal(0, 1, data_num)
     N = np.random.normal(0, sigma, size=[data_num,d])
-    Comp1 = vect_pool[0,:] + np.outer(Z1,vect_pool[1,:]) + np.outer(Z2,vect_pool[2,:]) + N
-    Comp2 = 2*vect_pool[3,:] + (2**0.5)*np.outer(Z1,vect_pool[4,:]) + np.outer(Z2,vect_pool[5,:]) + N
-    Comp3 = (2**0.5)*vect_pool[5,:] + np.outer(Z1,(vect_pool[0,:]+vect_pool[1,:])) + \
-            0.5*(2**0.5)*np.outer(Z2,vect_pool[4,:]) + N
+    CompS1 = vect_pool[0,:] + np.outer(Z1,vect_pool[1,:]) + np.outer(Z2,vect_pool[2,:])
+    CompS2 = 2*vect_pool[3,:] + (2**0.5)*np.outer(Z1,vect_pool[4,:]) + np.outer(Z2,vect_pool[5,:])
+    CompS3 = (2**0.5)*vect_pool[5,:] + np.outer(Z1,(vect_pool[0,:]+vect_pool[1,:])) + \
+            0.5*(2**0.5)*np.outer(Z2,vect_pool[4,:])
     mixGaussInd = np.random.choice(3,data_num)
     ind0 = (mixGaussInd==0)
     ind1 = (mixGaussInd==1)
@@ -267,7 +269,8 @@ for i in range(draw_num):
     print("Draw {:d}\nRatio of gaussian mixture components = {:d}:{:d}:{:d}".format(i,x0Len,x1Len,x2Len))
     print("P(z[0]=1) = {:.3f}, P(z[1]=1) = {:.3f}, P(z[2]=1) = {:.3f}"
           .format(prob_z_temp[0,0],prob_z_temp[1,0],prob_z_temp[2,0]))
-    x_temp = np.concatenate((Comp1[ind0,:], Comp2[ind1,:], Comp3[ind2,:]),axis=0)
+    s = np.concatenate((CompS1[ind0,:], CompS2[ind1,:], CompS3[ind2,:]),axis=0)
+    x_temp = s + N
 
     y_temp = m_factor * np.matmul(Phi, x_temp.T)
 
@@ -275,11 +278,11 @@ for i in range(draw_num):
         clf = Lasso(alpha=lamb[j])
         clf.fit(PhiB, y_temp)
         a_hat = clf.coef_
-        recon = np.matmul(PhiB, a_hat.T)
-        norm_MSE[i, j] = MSE(y_temp, recon)
-        MSE_Comp1[i, j] = MSE(y_temp[:,ind0], recon[:,ind0])
-        MSE_Comp2[i, j] = MSE(y_temp[:, ind1], recon[:, ind1])
-        MSE_Comp3[i, j] = MSE(y_temp[:, ind2], recon[:, ind2])
+        s_hat = np.matmul(a_hat,B)
+        norm_MSE[i, j] = MSE(s, s_hat)
+        MSE_Comp1[i, j] = MSE(s[ind0,:], s_hat[ind0,:])
+        MSE_Comp2[i, j] = MSE(s[ind1,:], s_hat[ind1,:])
+        MSE_Comp3[i, j] = MSE(s[ind2,:], s_hat[ind2,:])
 
 plt.figure()
 plt.get_current_fig_manager().window.wm_geometry("1400x660+20+20")
