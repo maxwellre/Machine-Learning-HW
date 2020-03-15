@@ -10,3 +10,9 @@
 *.synctex.gz
 *.tex
 *checkpoint
+
+*.jpg
+*.tfmodel
+*__pycache__/
+StyleTransferProject/fig/
+StyleTransferProject/Test.txt
